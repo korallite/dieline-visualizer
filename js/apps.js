@@ -1,4 +1,3 @@
-<script>
         const MIN_DIM = 2;
         const FIXED_ANGLE_DEG = 15;
         let currentDielineData = null;
@@ -336,4 +335,3 @@
 
         window.onload = resizeCanvas;
         window.onresize = resizeCanvas;
-    </script>
