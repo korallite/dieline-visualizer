@@ -1,4 +1,3 @@
-
         const MIN_DIM = 2;
         const FIXED_ANGLE_DEG = 15;
         let currentDielineData = null;
@@ -98,106 +97,183 @@
             drawDieline();
         }, { passive: false });
 
-const canvas = document.getElementById('dielineCanvas');
-const ctx = canvas.getContext('2d');
-let scale = 1.0, offsetX = 0, offsetY = 0;
+        function drawDieline() {
+            const statusMessage = document.getElementById('statusMessage');
+            const summaryDiv = document.getElementById('summaryText');
+            
+            const P = parseFloat(document.getElementById('txtP').value);
+            const L = parseFloat(document.getElementById('txtL').value);
+            const T = parseFloat(document.getElementById('txtT').value);
+            const F = parseFloat(document.getElementById('txtF').value);
+            const Pl = parseFloat(document.getElementById('txtPl').value);
+            const coak = parseFloat(document.getElementById('txtCoak').value);
+            
+            if ([P, L, T, F, Pl].some(val => isNaN(val) || val < MIN_DIM)) {
+                statusMessage.textContent = "Masukkan dimensi yang valid";
+                statusMessage.className = "bg-red-50 text-red-600 px-6 py-2 rounded-full shadow-lg border border-red-100 text-sm font-medium opacity-100";
+                return;
+            }
 
-async function calculateDieline() {
-    const body = {
-        P: +document.getElementById('txtP').value,
-        L: +document.getElementById('txtL').value,
-        T: +document.getElementById('txtT').value,
-        F: +document.getElementById('txtF').value,
-        Pl: +document.getElementById('txtPl').value,
-        coak: +document.getElementById('txtCoak').value
-    };
+            const angleRad = FIXED_ANGLE_DEG * Math.PI / 180;
+            const H_FLAP = (L + Pl) / 2;
+            const H_T = T;
+            const totalWidthMM = F + P + L + P + L;
+            const totalHeightMM = H_FLAP + H_T + H_FLAP;
 
-    const res = await fetch("https://aged-snow-1470.farid-pdx.workers.dev/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-    });
+            summaryDiv.innerHTML = `
+                <div class="flex justify-between"><span>Lebar Sheet:</span><span class="font-bold">${totalWidthMM.toFixed(1)} mm</span></div>
+                <div class="flex justify-between"><span>Tinggi Sheet:</span><span class="font-bold">${totalHeightMM.toFixed(1)} mm</span></div>
+                <div class="flex justify-between"><span>Tinggi Flap:</span><span class="font-bold">${H_FLAP.toFixed(1)} mm</span></div>
+                <div class="flex justify-between"><span>Tinggi Body:</span><span class="font-bold">${H_T.toFixed(1)} mm</span></div>
+            `;
 
-    if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Worker Error");
-    }
+            const padding = 60;
+            const fitScale = Math.min(
+                (canvas.width - padding * 2) / totalWidthMM,
+                (canvas.height - padding * 2) / totalHeightMM
+            );
 
-    return res.json();
-}
+            const finalScale = fitScale * scale;
+            const drawStartX = offsetX + (canvas.width - totalWidthMM * finalScale) / 2;
+            const drawStartY = offsetY + (canvas.height - totalHeightMM * finalScale) / 2;
 
-async function drawDieline() {
-    try {
-        const d = await calculateDieline();
+            const mmToPx = (mm) => mm * finalScale;
+            const convertY = (yMM) => drawStartY + mmToPx(totalHeightMM - yMM);
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const R2_X = F;
+            const R3_X = R2_X + P;
+            const R4_X = R3_X + L;
+            const R5_X = R4_X + P;
+            const END_X = R5_X + L;
+            const Y_BOT_F_START = 0;
+            const Y_TOP_F_START = H_FLAP + H_T;
 
-        const { H_FLAP, totalWidthMM, totalHeightMM, panels, flapLem } = d;
-        const { R2_X, R3_X, R4_X, R5_X, END_X } = panels;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        const finalScale = Math.min(
-            canvas.width / totalWidthMM,
-            canvas.height / totalHeightMM
-        ) * scale;
+            // Theme colors
+            const cutColor = isCadMode ? '#22d3ee' : '#1E40AF'; // Cyan vs Blue
+            const creaseColor = isCadMode ? '#fbbf24' : '#D97706'; // Yellow vs Orange
+            const bodyColor = isCadMode ? 'rgba(34, 211, 238, 0.05)' : '#E0F2FE';
+            const flapColor = isCadMode ? 'rgba(239, 68, 68, 0.05)' : '#FEF2F2';
+            const glueColor = isCadMode ? 'rgba(251, 191, 36, 0.05)' : '#FEF3C7';
+            const textColor = isCadMode ? '#94a3b8' : '#4B5563';
+            const measureColor = isCadMode ? '#4b5563' : '#9CA3AF';
 
-        const mmToPx = mm => mm * finalScale;
+            const rects = [];
+            rects.push({ x: R2_X, y: H_FLAP, w: P, h: T, color: bodyColor });
+            rects.push({ x: R3_X, y: H_FLAP, w: L, h: T, color: bodyColor });
+            rects.push({ x: R4_X, y: H_FLAP, w: P, h: T, color: bodyColor });
+            rects.push({ x: R5_X, y: H_FLAP, w: L, h: T, color: bodyColor });
 
-        const drawStartX = (canvas.width - totalWidthMM*finalScale)/2 + offsetX;
-        const drawStartY = (canvas.height - totalHeightMM*finalScale)/2 + offsetY;
+            const panels = [{ x: R2_X, w: P }, { x: R3_X, w: L }, { x: R4_X, w: P }, { x: R5_X, w: L }];
+            panels.forEach(p => {
+                rects.push({ x: p.x + (coak/2), y: Y_TOP_F_START, w: p.w - coak, h: H_FLAP, color: flapColor });
+                rects.push({ x: p.x + (coak/2), y: Y_BOT_F_START, w: p.w - coak, h: H_FLAP, color: flapColor });
+            });
 
-        const convertY = yMM => drawStartY + mmToPx(totalHeightMM - yMM);
+            const deltaY = F * Math.tan(angleRad);
+            const flapLem = {
+                points: [
+                    { x: 0, y: H_FLAP + deltaY },
+                    { x: F, y: H_FLAP },
+                    { x: F, y: H_FLAP + T },
+                    { x: 0, y: H_FLAP + T - deltaY }
+                ],
+                color: glueColor
+            };
 
-        // Render main panels (contoh)
-        ctx.fillStyle = 'lightblue';
-        [ {x:R2_X,w:50}, {x:R3_X,w:50}, {x:R4_X,w:50}, {x:R5_X,w:50} ].forEach(p=>{
-            ctx.fillRect(drawStartX+mmToPx(p.x), convertY(H_FLAP+100), mmToPx(p.w), mmToPx(100));
-        });
+            currentDielineData = { P, L, T, F, Pl, coak, H_FLAP, totalWidthMM, totalHeightMM, rects, flapLem, R2_X, R3_X, R4_X, R5_X, END_X };
 
-        // Render flapLem
-        ctx.beginPath();
-        ctx.moveTo(drawStartX + mmToPx(flapLem[0].x), convertY(flapLem[0].y));
-        flapLem.forEach(pt => ctx.lineTo(drawStartX + mmToPx(pt.x), convertY(pt.y)));
-        ctx.closePath();
-        ctx.fillStyle = 'pink';
-        ctx.fill();
-        ctx.strokeStyle = 'red';
-        ctx.stroke();
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([]);
+            
+            // Flap Lem
+            ctx.beginPath();
+            ctx.fillStyle = flapLem.color;
+            ctx.strokeStyle = cutColor;
+            ctx.moveTo(drawStartX + mmToPx(flapLem.points[0].x), convertY(flapLem.points[0].y));
+            flapLem.points.forEach(pt => ctx.lineTo(drawStartX + mmToPx(pt.x), convertY(pt.y)));
+            ctx.closePath();
+            ctx.fill(); ctx.stroke();
 
-    } catch(err) {
-        console.error(err);
-        document.getElementById('statusMessage').textContent = err.message;
-    }
-}
+            // Main Panels
+            rects.forEach(r => {
+                ctx.fillStyle = r.color;
+                ctx.strokeStyle = cutColor;
+                ctx.beginPath();
+                ctx.rect(drawStartX + mmToPx(r.x), convertY(r.y + r.h), mmToPx(r.w), mmToPx(r.h));
+                ctx.fill(); ctx.stroke();
+            });
 
-// Resize canvas & draw
-function resizeCanvas() {
-    canvas.width = window.innerWidth - 50;
-    canvas.height = window.innerHeight - 100;
-    drawDieline();
-}
+            // Crease Lines
+            ctx.strokeStyle = creaseColor;
+            ctx.setLineDash([5, 5]);
+            [R2_X, R3_X, R4_X, R5_X].forEach(x => {
+                ctx.beginPath();
+                ctx.moveTo(drawStartX + mmToPx(x), convertY(0));
+                ctx.lineTo(drawStartX + mmToPx(x), convertY(totalHeightMM));
+                ctx.stroke();
+            });
+            [H_FLAP, H_FLAP + T].forEach(y => {
+                ctx.beginPath();
+                ctx.moveTo(drawStartX + mmToPx(0), convertY(y));
+                ctx.lineTo(drawStartX + mmToPx(END_X), convertY(y));
+                ctx.stroke();
+            });
 
+            // Dimensions
+            ctx.setLineDash([]);
+            ctx.fillStyle = textColor;
+            ctx.font = `bold ${Math.max(7, 10 * scale)}px Inter`;
+            ctx.textAlign = 'center';
 
+            const drawHMeasure = (xStart, xEnd, yMM, text, off = 25, color = measureColor) => {
+                const x1 = drawStartX + mmToPx(xStart);
+                const x2 = drawStartX + mmToPx(xEnd);
+                const y = convertY(yMM) - (off * scale);
+                ctx.strokeStyle = color;
+                ctx.beginPath();
+                ctx.moveTo(x1, y); ctx.lineTo(x2, y);
+                ctx.moveTo(x1, y-3); ctx.lineTo(x1, y+3);
+                ctx.moveTo(x2, y-3); ctx.lineTo(x2, y+3);
+                ctx.stroke();
+                ctx.fillText(text, (x1 + x2) / 2, y - 5);
+            };
 
-async function drawDieline() {
-    try {
-        const d = await calculateDieline();
+            const drawVMeasure = (xMM, yStart, yEnd, text, off = 25, color = measureColor) => {
+                const x = drawStartX + mmToPx(xMM) + (off * scale);
+                const y1 = convertY(yStart);
+                const y2 = convertY(yEnd);
+                ctx.strokeStyle = color;
+                ctx.beginPath();
+                ctx.moveTo(x, y1); ctx.lineTo(x, y2);
+                ctx.moveTo(x-3, y1); ctx.lineTo(x+3, y1);
+                ctx.moveTo(x-3, y2); ctx.lineTo(x+3, y2);
+                ctx.stroke();
+                ctx.save();
+                ctx.translate(x + 10, (y1 + y2) / 2);
+                ctx.rotate(Math.PI / 2);
+                ctx.fillText(text, 0, 0);
+                ctx.restore();
+            };
 
-        // sekarang pakai data dari worker
-        H_FLAP = d.H_FLAP;
-        totalWidthMM = d.totalWidthMM;
-        totalHeightMM = d.totalHeightMM;
-        R2_X = d.panels.R2_X;
-        R3_X = d.panels.R3_X;
-        R4_X = d.panels.R4_X;
-        R5_X = d.panels.R5_X;
-        flapLem = d.flapLem;
+            drawHMeasure(0, F, totalHeightMM, `F:${F}`);
+            drawHMeasure(R2_X, R3_X, totalHeightMM, `P:${P}`);
+            drawHMeasure(R3_X, R4_X, totalHeightMM, `L:${L}`);
+            drawHMeasure(R4_X, R5_X, totalHeightMM, `P:${P}`);
+            drawHMeasure(R5_X, END_X, totalHeightMM, `L:${L}`);
+            
+            drawVMeasure(END_X, 0, H_FLAP, `Flap:${H_FLAP.toFixed(1)}`);
+            drawVMeasure(END_X, H_FLAP, H_FLAP + T, `T:${T}`);
+            drawVMeasure(END_X, H_FLAP + T, totalHeightMM, `Flap:${H_FLAP.toFixed(1)}`);
+            
+            drawHMeasure(0, END_X, totalHeightMM, `TOTAL: ${totalWidthMM.toFixed(1)} mm`, 55, isCadMode ? '#22d3ee' : '#4F46E5');
+            drawVMeasure(END_X, 0, totalHeightMM, `TOTAL: ${totalHeightMM.toFixed(1)} mm`, 70, isCadMode ? '#22d3ee' : '#4F46E5');
 
-        // lanjut render canvas seperti biasa...
-    } catch (err) {
-        console.error(err);
-        document.getElementById('statusMessage').textContent = err.message;
-    }
-}
+            statusMessage.textContent = "Dieline Updated";
+            statusMessage.className = `px-6 py-2 rounded-full shadow-lg border text-sm font-medium opacity-100 ${isCadMode ? 'bg-gray-800 text-cyan-400 border-cyan-900' : 'bg-white/90 text-emerald-600 border-emerald-100'}`;
+            setTimeout(() => { statusMessage.style.opacity = '0'; }, 2000);
+        }
 
         function exportToSVG() {
             if (!currentDielineData) return;
