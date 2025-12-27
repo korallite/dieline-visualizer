@@ -144,7 +144,7 @@
             drawSVGDimV(d.END_X + 5, d.H_FLAP, d.H_FLAP + d.T, `T:${d.T}`);
             drawSVGDimV(d.END_X + 5, d.H_FLAP + d.T, d.totalHeightMM, `Flap:${d.H_FLAP.toFixed(1)}`);
 
-            svg += `<text x="${sx(d.totalWidthMM/2)}" y="${sy(d.totalHeightMM+20)}" font-size="5" font-weight="bold" fill="#4F46E5" text-anchor="middle">Total Lebar: ${d.totalWidthMM.toFixed(1)} mm</text>`;
+            svg += `<text x="${sx(d.totalWidthMM/2)}" y="${sy(d.totalHeightMM+20)}" font-size="5" font-weight="bold" fill="#4F46E5" text-anchor="middle">= ${d.totalWidthMM.toFixed(1)} mm</text>`;
 
             svg += `</svg>`;
             const blob = new Blob([svg], {type: 'image/svg+xml'});
