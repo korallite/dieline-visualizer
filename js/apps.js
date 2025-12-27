@@ -98,6 +98,10 @@
             drawDieline();
         }, { passive: false });
 
+const canvas = document.getElementById('dielineCanvas');
+const ctx = canvas.getContext('2d');
+let scale = 1.0, offsetX = 0, offsetY = 0;
+
 async function calculateDieline() {
     const body = {
         P: +document.getElementById('txtP').value,
@@ -121,6 +125,57 @@ async function calculateDieline() {
 
     return res.json();
 }
+
+async function drawDieline() {
+    try {
+        const d = await calculateDieline();
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const { H_FLAP, totalWidthMM, totalHeightMM, panels, flapLem } = d;
+        const { R2_X, R3_X, R4_X, R5_X, END_X } = panels;
+
+        const finalScale = Math.min(
+            canvas.width / totalWidthMM,
+            canvas.height / totalHeightMM
+        ) * scale;
+
+        const mmToPx = mm => mm * finalScale;
+
+        const drawStartX = (canvas.width - totalWidthMM*finalScale)/2 + offsetX;
+        const drawStartY = (canvas.height - totalHeightMM*finalScale)/2 + offsetY;
+
+        const convertY = yMM => drawStartY + mmToPx(totalHeightMM - yMM);
+
+        // Render main panels (contoh)
+        ctx.fillStyle = 'lightblue';
+        [ {x:R2_X,w:50}, {x:R3_X,w:50}, {x:R4_X,w:50}, {x:R5_X,w:50} ].forEach(p=>{
+            ctx.fillRect(drawStartX+mmToPx(p.x), convertY(H_FLAP+100), mmToPx(p.w), mmToPx(100));
+        });
+
+        // Render flapLem
+        ctx.beginPath();
+        ctx.moveTo(drawStartX + mmToPx(flapLem[0].x), convertY(flapLem[0].y));
+        flapLem.forEach(pt => ctx.lineTo(drawStartX + mmToPx(pt.x), convertY(pt.y)));
+        ctx.closePath();
+        ctx.fillStyle = 'pink';
+        ctx.fill();
+        ctx.strokeStyle = 'red';
+        ctx.stroke();
+
+    } catch(err) {
+        console.error(err);
+        document.getElementById('statusMessage').textContent = err.message;
+    }
+}
+
+// Resize canvas & draw
+function resizeCanvas() {
+    canvas.width = window.innerWidth - 50;
+    canvas.height = window.innerHeight - 100;
+    drawDieline();
+}
+
 
 
 async function drawDieline() {
