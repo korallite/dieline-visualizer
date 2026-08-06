@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dieline 3D — Demo Konsep</title>
+<style>
+    :root {
+        --bg: #0f172a;
+        --surface: #1e293b;
+        --surface-2: #263449;
+        --line: #334155;
+        --ink: #e2e8f0;
+        --muted: #94a3b8;
+        --accent: #60a5fa;
+        --accent-2: #3b82f6;
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink);
+        font-family: -apple-system, 'Segoe UI', sans-serif; display: flex; flex-direction: column;
+    }
+    header { padding: 18px 24px; border-bottom: 1px solid var(--line); display: flex; align-items: baseline; gap: 12px; }
+    header h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: .01em; }
+    header span { font-size: 12px; color: var(--muted); }
+
+    main { flex: 1; display: flex; min-height: 0; }
+    #stage { flex: 1; position: relative; }
+    #stage canvas { display: block; width: 100%; height: 100%; }
+
+    #panel {
+        width: 280px; border-left: 1px solid var(--line); background: var(--surface);
+        padding: 18px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto;
+    }
+    .section h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; font-size: 12.5px; }
+    .row .val { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    input[type=range] { -webkit-appearance: none; width: 100%; height: 4px; border-radius: 3px; background: var(--line); }
+    input[type=range]::-webkit-slider-thumb {
+        -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+        background: var(--accent); cursor: pointer; box-shadow: 0 0 0 3px rgba(96,165,250,.2);
+    }
+
+    .btn {
+        width: 100%; padding: 9px; border-radius: 8px; border: 1px solid var(--line);
+        background: var(--surface-2); color: var(--ink); font-size: 12.5px; font-weight: 600;
+        cursor: pointer; transition: all .15s;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn.primary { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
+    .btn.primary:hover { filter: brightness(1.1); }
+
+    .note {
+        font-size: 11.5px; line-height: 1.6; color: var(--muted); background: var(--surface-2);
+        border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+    }
+    .note b { color: var(--ink); }
+
+    #hint {
+        position: absolute; bottom: 14px; left: 14px; font-size: 11px; color: var(--muted);
+        background: rgba(15,23,42,.7); padding: 6px 10px; border-radius: 6px; backdrop-filter: blur(4px);
+    }
+</style>
+</head>
+<body>
+
+<header>
+    <h1>📦 Dieline 3D — Demo Konsep</h1>
+    <span>Simplified logic preview, bukan versi produksi</span>
+</header>
+
+<main>
+    <div id="stage">
+        <div id="hint">Drag untuk rotate • Scroll untuk zoom</div>
+    </div>
+
+    <div id="panel">
+        <div class="section">
+            <h2>Lipat / Fold</h2>
+            <div class="row"><span>Progress</span><span class="val" id="foldVal">0%</span></div>
+            <input type="range" id="foldSlider" min="0" max="1" step="0.001" value="0">
+            <button class="btn primary" id="playBtn" style="margin-top:10px;">▶ Animasikan</button>
+        </div>
+
+        <div class="section">
+            <h2>Ukuran Box (cm)</h2>
+            <div class="row"><span>Panjang</span><span class="val" id="lVal">10</span></div>
+            <input type="range" id="lSlider" min="4" max="18" step="1" value="10">
+            <div class="row" style="margin-top:8px;"><span>Lebar</span><span class="val" id="wVal">8</span></div>
+            <input type="range" id="wSlider" min="4" max="18" step="1" value="8">
+            <div class="row" style="margin-top:8px;"><span>Tinggi</span><span class="val" id="hVal">6</span></div>
+            <input type="range" id="hSlider" min="3" max="16" step="1" value="6">
+        </div>
+
+        <div class="section">
+            <div class="note">
+                Ini <b>demo logika umum</b> saja: net/dieline direpresentasikan sebagai panel-panel yang
+                terhubung lewat "hinge" (engsel), lalu setiap hinge dirotasi mengikuti nilai slider fold
+                (0 → rata, 1 → terlipat penuh). Fitur lengkap (parsing SVG dieline asli, deteksi crease
+                otomatis, multi-material, export animasi, dsb) tidak disertakan di versi ini.
+            </div>
+        </div>
+    </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+/* =========================================================================
+   KONSEP INTI (high-level, disederhanakan dari sistem aslinya):
+
+   1. Sebuah kotak dibangun sebagai 6 PANEL persegi panjang: bottom, front,
+      back, left, right, top.
+   2. BOTTOM adalah panel "root" yang diam di tempat.
+   3. Panel lain masing-masing dibungkus dalam THREE.Group yang dipivot
+      tepat di garis lipatnya (hinge), lalu dijadikan child dari group
+      panel sebelumnya (hierarchical hinge chain) — ini prinsip yang sama
+      dipakai buat merepresentasikan dieline apa pun sebagai graf
+      panel + hinge, bukan cuma kotak sederhana ini.
+   4. Nilai foldProgress (0..1) di-map ke sudut rotasi tiap hinge
+      (biasanya 0° → 90°/180° tergantung posisi panel di net).
+   5. Slider mengubah foldProgress secara real-time → semua hinge rotate
+      bareng → net "melipat" jadi bentuk 3D.
+   ========================================================================= */
+
+const stage = document.getElementById('stage');
+
+// ---- Scene setup ----
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0f172a);
+scene.fog = new THREE.Fog(0x0f172a, 30, 90);
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
+camera.position.set(22, 20, 24);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+stage.appendChild(renderer.domElement);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 3, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+dir.position.set(15, 25, 10);
+scene.add(dir);
+const fill = new THREE.DirectionalLight(0x60a5fa, 0.25);
+fill.position.set(-15, 8, -10);
+scene.add(fill);
+
+const grid = new THREE.GridHelper(80, 40, 0x334155, 0x1e293b);
+scene.add(grid);
+
+// ---- Materi panel (sederhana: satu warna kraft + garis tepi) ----
+const panelMat = new THREE.MeshStandardMaterial({
+    color: 0xd9c9a3, roughness: 0.85, metalness: 0.02, side: THREE.DoubleSide
+});
+const edgeColor = 0x8a7248;
+
+function makePanelMesh(w, h) {
+    const geo = new THREE.PlaneGeometry(w, h);
+    geo.translate(0, h / 2, 0); // pivot di tepi bawah panel
+    const mesh = new THREE.Mesh(geo, panelMat);
+    const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({ color: edgeColor })
+    );
+    mesh.add(edges);
+    return mesh;
+}
+
+// ---- Struktur: root group (bottom) + 4 hinge group (front/back/left/right) ----
+let boxRoot, hinges = {};
+
+function buildBox(L, W, H) {
+    if (boxRoot) scene.remove(boxRoot);
+    hinges = {};
+
+    boxRoot = new THREE.Group();
+
+    // Panel bawah (root, tidak melipat)
+    const bottomGeo = new THREE.PlaneGeometry(L, W);
+    bottomGeo.rotateX(-Math.PI / 2);
+    const bottom = new THREE.Mesh(bottomGeo, panelMat);
+    bottom.add(new THREE.LineSegments(new THREE.EdgesGeometry(bottomGeo), new THREE.LineBasicMaterial({ color: edgeColor })));
+    boxRoot.add(bottom);
+
+    // Konfigurasi 4 sisi: posisi hinge di tepi bottom + arah lipat
+    const sides = [
+        { key: 'front', w: L, pos: [0, 0,  W / 2], rot: 0 },
+        { key: 'back',  w: L, pos: [0, 0, -W / 2], rot: Math.PI },
+        { key: 'left',  w: W, pos: [-L / 2, 0, 0], rot: -Math.PI / 2 },
+        { key: 'right', w: W, pos: [ L / 2, 0, 0], rot: Math.PI / 2 },
+    ];
+
+    sides.forEach(s => {
+        const hingeGroup = new THREE.Group();       // pivot = garis lipat
+        hingeGroup.position.set(...s.pos);
+        hingeGroup.rotation.y = s.rot;
+        const panel = makePanelMesh(s.w, H);         // panel menempel di pivot, mulai rebah (flat)
+        panel.rotation.x = Math.PI / 2;               // posisi awal: rata di lantai (fold = 0)
+        hingeGroup.add(panel);
+        boxRoot.add(hingeGroup);
+        hinges[s.key] = hingeGroup.children[0];       // simpan referensi mesh utk animasi
+        hingeGroup.userData.panel = panel;
+    });
+
+    scene.add(boxRoot);
+    updateFold(parseFloat(document.getElementById('foldSlider').value));
+}
+
+// ---- LOGIKA FOLD: map progress (0..1) -> rotasi tiap hinge ----
+function updateFold(t) {
+    // t = 0  → semua panel rebah (rotation.x = 90°, sejajar lantai)
+    // t = 1  → semua panel berdiri tegak (rotation.x = 0°, tegak lurus bottom)
+    const angle = (1 - t) * (Math.PI / 2);
+    Object.values(hinges).forEach(panel => { panel.rotation.x = angle; });
+    document.getElementById('foldVal').textContent = Math.round(t * 100) + '%';
+}
+
+// ---- Resize ----
+function resize() {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+
+// ---- UI wiring ----
+const foldSlider = document.getElementById('foldSlider');
+foldSlider.addEventListener('input', e => updateFold(parseFloat(e.target.value)));
+
+const lSlider = document.getElementById('lSlider');
+const wSlider = document.getElementById('wSlider');
+const hSlider = document.getElementById('hSlider');
+[lSlider, wSlider, hSlider].forEach(s => s.addEventListener('input', rebuild));
+
+function rebuild() {
+    document.getElementById('lVal').textContent = lSlider.value;
+    document.getElementById('wVal').textContent = wSlider.value;
+    document.getElementById('hVal').textContent = hSlider.value;
+    buildBox(parseFloat(lSlider.value) / 2, parseFloat(wSlider.value) / 2, parseFloat(hSlider.value));
+}
+
+let playing = false, dir2 = 1;
+document.getElementById('playBtn').addEventListener('click', () => {
+    playing = !playing;
+    document.getElementById('playBtn').textContent = playing ? '⏸ Jeda' : '▶ Animasikan';
+    if (playing) {
+        const v = parseFloat(foldSlider.value);
+        dir2 = v >= 1 ? -1 : 1;
+    }
+});
+
+// ---- Init & loop ----
+resize();
+rebuild();
+camera.lookAt(0, 3, 0);
+
+function animate() {
+    requestAnimationFrame(animate);
+    if (playing) {
+        let v = parseFloat(foldSlider.value) + 0.006 * dir2;
+        if (v >= 1) { v = 1; dir2 = -1; }
+        if (v <= 0) { v = 0; dir2 = 1; playing = false; document.getElementById('playBtn').textContent = '▶ Animasikan'; }
+        foldSlider.value = v;
+        updateFold(v);
+    }
+    controls.update();
+    renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
